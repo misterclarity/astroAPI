@@ -350,6 +350,9 @@ const validateCalculateInput = (req, res, next) => {
     timezone,
     latitude,
     longitude,
+    name,
+    type,
+    gender,
   } = req.query;
 
   // Convert query string parameters to appropriate types
@@ -390,6 +393,15 @@ const validateCalculateInput = (req, res, next) => {
   if (isNaN(parsedLongitude) || parsedLongitude < -180 || parsedLongitude > 180) {
     return res.status(400).json({ error: "Invalid longitude" });
   }
+  if (!name || name.trim() === "") {
+    return res.status(400).json({ error: "Name is required" });
+  }
+  if (!type || (type !== "Person" && type !== "Event")) {
+    return res.status(400).json({ error: "Type must be either 'Person' or 'Event'" });
+  }
+  if (type === "Person" && (!gender || (gender !== "Male" && gender !== "Female"))) {
+    return res.status(400).json({ error: "Gender must be either 'Male' or 'Female' for Person type" });
+  }
 
   // Attach parsed values to the request object
   req.parsedQuery = {
@@ -402,6 +414,9 @@ const validateCalculateInput = (req, res, next) => {
     timezone,
     latitude: parsedLatitude,
     longitude: parsedLongitude,
+    name,
+    type,
+    gender,
   };
 
   next();
@@ -419,6 +434,9 @@ app.get("/calculate", validateCalculateInput, (req, res) => {
     timezone,
     latitude,
     longitude,
+    name,
+    type,
+    gender,
   } = req.parsedQuery;
 
   try {
@@ -434,9 +452,14 @@ app.get("/calculate", validateCalculateInput, (req, res) => {
       longitude
     );
     res.json({
-      planets: result.positions,
-      aspects: result.aspects,
-      houses: result.houses,
+      name: name,
+      type: type,
+      gender: gender || "",
+      chart: {
+        planets: result.positions,
+        aspects: result.aspects,
+        houses: result.houses,
+      }
     });
   } catch (error) {
     logger.error("Error in /calculate:", error);
