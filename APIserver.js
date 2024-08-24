@@ -438,7 +438,7 @@ app.get("/calculate", validateCalculateInput, (req, res) => {
     type,
     gender,
   } = req.parsedQuery;
-
+  
   try {
     const result = calculatePlanetPositions(
       year,
