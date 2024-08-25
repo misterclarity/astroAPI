@@ -438,7 +438,7 @@ app.get("/calculate", validateCalculateInput, (req, res) => {
     type,
     gender,
   } = req.parsedQuery;
-  
+
   try {
     const result = calculatePlanetPositions(
       year,
@@ -451,16 +451,27 @@ app.get("/calculate", validateCalculateInput, (req, res) => {
       latitude,
       longitude
     );
-    res.json({
-      name: name,
-      type: type,
-      gender: gender || "",
-      chart: {
-        planets: result.positions,
-        aspects: result.aspects,
-        houses: result.houses,
+
+    const response = {
+      header: {
+        generated: new Date().toISOString(),
+        version: "1.0"
+      },
+      body: {
+        data: [{
+          name: name,
+          type: type,
+          gender: gender || "",
+          chart: {
+            planets: result.positions,
+            aspects: result.aspects,
+            houses: result.houses,
+          }
+        }]
       }
-    });
+    };
+
+    res.json(response);
   } catch (error) {
     logger.error("Error in /calculate:", error);
     res
