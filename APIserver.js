@@ -4,6 +4,7 @@ require("dotenv").config();
 // Import required modules
 const express = require("express");
 const cors = require("cors");
+const path = require("path");
 const {
   utc_to_jd,
   calc,
@@ -69,7 +70,7 @@ app.use((req, res, next) => {
   next();
 });
 
-set_ephe_path(process.env.EPHE_PATH || "/app/ephemeris");
+set_ephe_path(process.env.EPHE_PATH || path.join(__dirname, "ephe"));
 
 app.get("/health", (req, res) => {
   res.send({ status: "Server is running" });
@@ -147,6 +148,10 @@ function calculatePlanetPositions(
     const utcTime = localTime.toUTC();
 
     // Convert UTC time to Julian Date
+    // ASTROLOGY CONTEXT:
+    // A "Julian Date" (JD) is a continuous count of days since the beginning of the Julian Period (January 1, 4713 BC).
+    // Astronomers and astrologers use it because it makes calculating the time difference between two events very easy
+    // (just subtraction), avoiding the complexities of leap years and different calendar systems (Gregorian vs Julian).
     const date = utc_to_jd(
       utcTime.year,
       utcTime.month,
@@ -162,6 +167,8 @@ function calculatePlanetPositions(
     const [jd_et, jd_ut] = date.data;
 
     // Set calculation flags
+    // SEFLG_SWIEPH: Use Swiss Ephemeris data files (high precision, ~0.001 arcseconds)
+    // SEFLG_SPEED: Calculate speed of the planet (necessary to determine if it's Retrograde)
     const flags = constants.SEFLG_SWIEPH | constants.SEFLG_SPEED;
 
     // Define planets and points to calculate
@@ -248,7 +255,18 @@ function calculatePlanetPositions(
     throw error;
   }
 }
-
+/**
+ * Calculates aspects between planets.
+ * ASTROLOGY CONTEXT:
+ * An "Aspect" represents a specific geometric angle between two celestial bodies relative to the Earth.
+ * Aspects describe how the energies of two planets interact.
+ * - Conjunction (0°): Blending of energies.
+ * - Opposition (180°): Tension, awareness, polarity.
+ * - Trine (120°): Harmony, easy flow of energy.
+ * - Square (90°): Friction, challenge, call to action.
+ * - Orb: The "allowance" of deviation from the exact angle. e.g., if a Trine is 120°, and the orb is 8°,
+ *   any angle between 112° and 128° is considered a Trine.
+ */
 function calculateAspects(positions) {
   const aspects = [];
   const aspectDefinitions = [
@@ -298,6 +316,11 @@ function calculateAspects(positions) {
 
 /**
  * Calculates Placidus house positions
+ * ASTROLOGY CONTEXT:
+ * Houses represent different areas of life (e.g., Self, Assets, Communication, Home).
+ * The "Placidus" system is one of the most popular space-based house systems.
+ * It divides the path of the sun (ecliptic) based on the time it takes for each degree to rise.
+ *
  * @param {number} jd_ut - Julian day in universal time
  * @param {number} latitude - Geographic latitude
  * @param {number} longitude - Geographic longitude
