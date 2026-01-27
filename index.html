@@ -4,210 +4,1100 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Astrology Chart Calculator (Direct API)</title>
+  <title>Astro API | Astrological Data Calculator</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 1000px;
-      margin: 0 auto;
-      padding: 20px;
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --text-main: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #f59e0b;
+      /* Amber/Gold */
+      --accent-glow: rgba(245, 158, 11, 0.3);
+      --border: rgba(255, 255, 255, 0.1);
+      --success: #10b981;
+      --danger: #ef4444;
     }
 
-    form {
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-color);
+      background-image: radial-gradient(circle at 50% 0%,
+          #1e1b4b 0%,
+          var(--bg-color) 70%);
+      color: var(--text-main);
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    h1 {
+      color: var(--accent);
+      text-shadow: 0 0 20px var(--accent-glow);
+      margin: 0;
+      font-weight: 300;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-size: 2.5rem;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      margin-bottom: 2rem;
+    }
+
+    /* Form Styling */
+    .form-grid {
       display: grid;
-      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .form-section-title {
+      grid-column: 1 / -1;
+      color: var(--accent);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-top: 1rem;
+      margin-bottom: -0.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
     }
 
     label {
-      font-weight: bold;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
     }
 
     input,
     select {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      color: white;
+      font-size: 1rem;
+      transition: all 0.2s;
       width: 100%;
-      padding: 5px;
+      box-sizing: border-box;
     }
 
-    button {
-      background-color: #4caf50;
-      color: white;
-      padding: 10px;
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .full-width {
+      grid-column: 1 / -1;
+    }
+
+    button.primary-btn {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, var(--accent), #d97706);
+      color: #000;
+      font-weight: 800;
+      padding: 1rem;
       border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-top: 1rem;
+    }
+
+    button.primary-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px -10px var(--accent);
+    }
+
+    /* Results Styling */
+    #results-container {
+      display: none;
+      animation: fadeIn 0.6s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 1.5rem;
+    }
+
+    h2 {
+      color: var(--accent);
+      font-weight: 400;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 0.75rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .retro-badge {
+      color: var(--danger);
+      font-weight: bold;
+      font-size: 0.75rem;
+      margin-left: 5px;
+      border: 1px solid var(--danger);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    .aspect-tag {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .aspect-hard {
+      background: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .aspect-soft {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .aspect-neutral {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
+    }
+
+    #error-msg {
+      display: none;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--danger);
+      color: #fca5a5;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    #loader {
+      display: none;
+      text-align: center;
+      padding: 2rem;
+      color: var(--accent);
+      font-style: italic;
+    }
+
+    @media (max-width: 600px) {
+      .card {
+        padding: 1rem;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Modal Styling */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    .modal-content {
+      background: var(--bg-color);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      color: var(--text-main);
+    }
+
+    .modal-list {
+      list-style: none;
+      padding: 0;
+      margin: 1rem 0 0 0;
+    }
+
+    .modal-list li {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+    }
+
+    .modal-list li:last-child {
+      border-bottom: none;
+    }
+
+    /* Tooltip Styling */
+    .chart-tooltip {
+      position: fixed;
+      background: var(--card-bg);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+      color: var(--text-main);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease-out;
+      z-index: 500;
+      white-space: nowrap;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+  </style>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* ... existing styles ... */
+    #chart-container {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto 2rem auto;
+      aspect-ratio: 1;
+      position: relative;
+    }
+
+    svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .zodiac-ring path {
+      fill: none;
+      stroke: var(--border);
+      stroke-width: 1;
+    }
+
+    .zodiac-label {
+      fill: var(--accent);
+      font-size: 14px;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .planet-symbol {
+      font-size: 16px;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      fill: var(--text-main);
       cursor: pointer;
     }
 
-    button:hover {
-      background-color: #45a049;
+    .planet-line {
+      stroke: var(--border);
+      stroke-width: 1;
+      stroke-dasharray: 2, 2;
     }
 
-    #results,
-    #error {
-      margin-top: 20px;
-    }
-
-    #error {
-      color: red;
-    }
-
-    #results {
-      white-space: pre-wrap;
-      font-family: monospace;
-    }
-
-    #genderField {
-      display: none;
+    .aspect-line {
+      stroke-width: 1;
+      opacity: 0.6;
     }
   </style>
 </head>
 
 <body>
-  <h1>Astrology Chart Calculator</h1>
-  <p>
-    <em>Note: This calculator makes direct calls to the astrology API.</em>
-    <!-- ASTROLOGY CONTEXT:
-         Precision is key in astrology. A difference of 4 minutes in birth time can change the Ascendant by 1 degree.
-         Similarly, a few kilometers in latitude/longitude can shift the house cusps significantly.
-    -->
-  </p>
-  <form id="astroForm">
-    <label for="name">Name:</label>
-    <input type="text" id="name" maxlength="255" required />
+  <div class="container">
+    <header>
+      <h1>Astro API</h1>
+    </header>
 
-    <label for="type">Type:</label>
-    <select id="type" required>
-      <option value="Event">Event</option>
-      <option value="Person">Person</option>
-      <option value="Other">Other</option>
-    </select>
+    <div id="error-msg"></div>
 
-    <div id="genderField">
-      <label for="gender">Gender:</label>
-      <select id="gender">
-        <option value="Male">Male</option>
-        <option value="Female">Female</option>
-        <option value="Other">Other</option>
-      </select>
+    <div class="card">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; margin-bottom: 1rem;"
+        onclick="toggleForm()">
+        <h2 style="margin: 0; border: none;">Chart Configuration</h2>
+        <span id="form-toggle-icon" style="transition: transform 0.3s;">▼</span>
+      </div>
+      <form id="astroForm" class="form-grid" style="transition: all 0.3s ease-out; overflow: hidden;">
+
+        <div class="form-section-title">Identity</div>
+
+        <div class="form-group full-width">
+          <label for="name">Name / Event</label>
+          <input type="text" id="name" placeholder="e.g. Albert Einstein" required maxlength="255" />
+        </div>
+
+        <div class="form-group">
+          <label for="type">Chart Type</label>
+          <select id="type" required>
+            <option value="Person">Person (Natal)</option>
+            <option value="Event">Event (Transit)</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="genderField">
+          <label for="gender">Gender</label>
+          <select id="gender">
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="nodeType">Node Calculation</label>
+          <select id="nodeType">
+            <option value="True">True Node</option>
+            <option value="Mean">Mean Node</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="houseSystem">House System</label>
+          <select id="houseSystem">
+            <option value="P">Placidus</option>
+            <option value="K">Koch</option>
+            <option value="O">Porphyrius</option>
+            <option value="R">Regiomontanus</option>
+            <option value="C">Campanus</option>
+            <option value="E">Equal (Asc)</option>
+            <option value="W">Whole Sign</option>
+            <option value="M">Morinus</option>
+            <option value="T">Topocentric</option>
+          </select>
+        </div>
+
+        <div class="form-group full-width" style="flex-direction: row; align-items: center; gap: 10px;">
+          <input type="checkbox" id="showMinor" style="width: auto;" />
+          <label for="showMinor" style="margin: 0; cursor: pointer;">Show Minor Aspects (Asteroids)</label>
+        </div>
+
+        <div class="form-section-title">Date & Time (UTC/Local)</div>
+
+        <div class="form-group">
+          <label for="year">Year</label>
+          <input type="number" id="year" required min="1" max="9999" value="1980" />
+        </div>
+        <div class="form-group">
+          <label for="month">Month</label>
+          <input type="number" id="month" required min="1" max="12" value="02" />
+        </div>
+        <div class="form-group">
+          <label for="day">Day</label>
+          <input type="number" id="day" required min="1" max="31" value="01" />
+        </div>
+
+        <div class="form-group">
+          <label for="hour">Hour (0-23)</label>
+          <input type="number" id="hour" required min="0" max="23" value="10" />
+        </div>
+        <div class="form-group">
+          <label for="minute">Minute</label>
+          <input type="number" id="minute" required min="0" max="59" value="38" />
+        </div>
+        <div class="form-group">
+          <label for="second">Second</label>
+          <input type="number" id="second" step="any" required min="0" max="59.999" value="00" />
+        </div>
+
+        <div class="form-group full-width">
+          <label for="timezone">Timezone</label>
+          <select id="timezone" required>
+            <option value="Europe/Bucharest">Bucharest (GMT+2/3)</option>
+            <option value="Europe/Paris">Paris (CET/CEST)</option>
+            <option value="Europe/London">London (GMT/BST)</option>
+            <option value="America/New_York">New York (EST/EDT)</option>
+            <option value="America/Los_Angeles">Los Angeles (PST/PDT)</option>
+            <option value="Asia/Tokyo">Tokyo (JST)</option>
+            <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
+          </select>
+        </div>
+
+        <div class="form-section-title">Location</div>
+
+        <div class="form-group">
+          <label for="latitude">Latitude (Decimal)</label>
+          <input type="number" id="latitude" required min="-90" max="90" step="any" value="47.1667" />
+        </div>
+        <div class="form-group">
+          <label for="longitude">Longitude (Decimal)</label>
+          <input type="number" id="longitude" required min="-180" max="180" step="any" value="27.6000" />
+        </div>
+
+        <button type="submit" class="primary-btn">Calculate Chart</button>
+      </form>
     </div>
 
-    <label for="year">Year:</label>
-    <input type="number" id="year" required min="1" max="9999" value="1983" />
+    <div id="loader">Consulting the stars...</div>
 
-    <label for="month">Month:</label>
-    <input type="number" id="month" required min="1" max="12" value="05" />
+    <div id="results-container">
+      <div class="card">
+        <h2>Birth Chart</h2>
+        <div id="chart-container"></div>
+      </div>
 
-    <label for="day">Day:</label>
-    <input type="number" id="day" required min="1" max="31" value="09" />
+      <div class="results-grid">
+        <!-- Planetary Positions -->
+        <div class="card">
+          <h2>Planetary Positions</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Body</th>
+                <th>Sign</th>
+                <th>Position</th>
+                <th>Motion</th>
+              </tr>
+            </thead>
+            <tbody id="planets-body">
+              <!-- JS Populated -->
+            </tbody>
+          </table>
+        </div>
 
-    <label for="hour">Hour (24-hour format):</label>
-    <input type="number" id="hour" required min="0" max="23" value="10" />
+        <!-- Houses -->
+        <div class="card">
+          <h2>House Cusps (Placidus)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>House</th>
+                <th>Sign</th>
+                <th>Cusp</th>
+              </tr>
+            </thead>
+            <tbody id="houses-body">
+              <!-- JS Populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-    <label for="minute">Minute:</label>
-    <input type="number" id="minute" required min="0" max="59" value="40" />
+      <!-- Aspects -->
+      <div class="card">
+        <h2>Planetary Aspects</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Planet A</th>
+              <th>Aspect</th>
+              <th>Planet B</th>
+              <th>Orb</th>
+            </tr>
+          </thead>
+          <tbody id="aspects-body">
+            <!-- JS Populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  </div>
 
-    <label for="second">Second:</label>
-    <input type="number" id="second" step="any" required min="0" max="59.999" value="00" />
+  <!-- Modal Structure -->
+  <div id="planetModal" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <button class="modal-close" onclick="closeModal()">×</button>
+      <h2 id="modalTitle" style="margin-top: 0;">Planet Details</h2>
+      <ul id="modalList" class="modal-list"></ul>
+    </div>
+  </div>
 
-    <label for="timezone">Timezone:</label>
-    <select id="timezone" required>
-      <option value="Europe/Bucharest">Bucharest (GMT/BST)</option>
-      <option value="Europe/Paris">Paris (CET/CEST)</option>
-      <option value="Asia/Tokyo">Tokyo (JST)</option>
-      <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
-    </select>
-
-    <label for="latitude">Latitude:</label>
-    <input type="number" id="latitude" required min="-90" max="90" step="any" value="47.1667" />
-
-    <label for="longitude">Longitude:</label>
-    <input type="number" id="longitude" required min="-180" max="180" step="any" value="27.6000" />
-    <button type="submit">Calculate Chart</button>
-  </form>
-
-  <div id="error"></div>
-  <div id="results"></div>
+  <!-- Tooltip -->
+  <div id="chartTooltip" class="chart-tooltip"></div>
 
   <script>
+    // Modal Logic
+    function closeModal(e) {
+      document.getElementById("planetModal").style.display = "none";
+    }
+
+    // Toggle Gender Field visibility
     document.getElementById("type").addEventListener("change", function () {
       const genderField = document.getElementById("genderField");
-      if (this.value === "Person") {
-        genderField.style.display = "block";
-      } else {
-        genderField.style.display = "none";
-      }
+      this.value === "Person"
+        ? (genderField.style.display = "flex")
+        : (genderField.style.display = "none");
     });
 
-    document
-      .getElementById("astroForm")
-      .addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const jsonResult = await calculateChart();
-        displayResults(jsonResult);
-      });
 
-    async function calculateChart() {
-      // Collect all inputs from the form
-      // ASTROLOGY CONTEXT: We need all these variables to calculate a "Natal Chart" or "Event Chart".
-      // - Date/Time: Determines planetary positions.
-      // - Lat/Long: Determines the House System (where planets fall in the sky relative to the horizon).
-      const name = document.getElementById("name").value;
-      const type = document.getElementById("type").value;
-      const gender = document.getElementById("gender").value;
-      const year = document.getElementById("year").value;
-      const month = document.getElementById("month").value;
-      const day = document.getElementById("day").value;
-      const hour = document.getElementById("hour").value;
-      const minute = document.getElementById("minute").value;
-      const second = document.getElementById("second").value;
-      const timezone = document.getElementById("timezone").value;
-      const latitude = document.getElementById("latitude").value;
-      const longitude = document.getElementById("longitude").value;
 
-      const apiUrl = new URL("http://localhost:3000/calculate");
-      apiUrl.searchParams.append("name", name);
-      apiUrl.searchParams.append("type", type);
-      if (type === "Person") {
-        apiUrl.searchParams.append("gender", gender);
+    // Form Toggle Logic
+    let isFormCollapsed = false;
+    function toggleForm(forceCollapse = null) {
+      const form = document.getElementById("astroForm");
+      const icon = document.getElementById("form-toggle-icon");
+
+      if (forceCollapse !== null) {
+        isFormCollapsed = forceCollapse;
+      } else {
+        isFormCollapsed = !isFormCollapsed;
       }
-      apiUrl.searchParams.append("year", year);
-      apiUrl.searchParams.append("month", month);
-      apiUrl.searchParams.append("day", day);
-      apiUrl.searchParams.append("hour", hour);
-      apiUrl.searchParams.append("minute", minute);
-      apiUrl.searchParams.append("second", second);
-      apiUrl.searchParams.append("timezone", timezone);
-      apiUrl.searchParams.append("latitude", latitude);
-      apiUrl.searchParams.append("longitude", longitude);
 
-      try {
-        const response = await fetch(apiUrl.toString());
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        return await response.json();
-      } catch (error) {
-        console.error("Error:", error);
-        return { error: error.message };
+      if (isFormCollapsed) {
+        form.style.maxHeight = "0";
+        form.style.opacity = "0";
+        form.style.padding = "0";
+        icon.style.transform = "rotate(-90deg)";
+      } else {
+        form.style.maxHeight = "2000px"; // Large enough to fit
+        form.style.opacity = "1";
+        form.style.padding = ""; // Reset to default
+        icon.style.transform = "rotate(0deg)";
       }
     }
 
-    function displayResults(jsonResult) {
-      const resultsDiv = document.getElementById("results");
-      const errorDiv = document.getElementById("error");
+    // Submit Handler
+    document.getElementById("astroForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
 
-      if (jsonResult.error) {
-        errorDiv.innerHTML = `<p>Error: ${jsonResult.error}</p>`;
-        resultsDiv.innerHTML = "";
-      } else {
-        errorDiv.innerHTML = "";
-        const jsonString = JSON.stringify(jsonResult, null, 2);
-        resultsDiv.innerHTML = `<pre>${jsonString}</pre>`;
-        // The API returns a JSON object with:
-        // - planets: Ecliptic longitude (0-360) and Zodiac Sign.
-        // - houses: Where the Zodiac signs fall relative to the Earth's horizon.
-        // - aspects: Geometric relationships between planets (e.g., Square, Trine).
+      const loader = document.getElementById("loader");
+      const results = document.getElementById("results-container");
+      const errorMsg = document.getElementById("error-msg");
+
+      // Reset state
+      loader.style.display = "block";
+      results.style.display = "none";
+      errorMsg.style.display = "none";
+
+      try {
+        const jsonResult = await calculateChart();
+
+        if (jsonResult.error) {
+          throw new Error(jsonResult.error);
+        }
+
+        renderData(jsonResult);
+        downloadJson(jsonResult);
+        loader.style.display = "none";
+        results.style.display = "block";
+        loader.style.display = "none";
+        results.style.display = "block";
+        drawChart(jsonResult); // Draw after visible!
+        toggleForm(true); // Auto-collapse form
+
+      } catch (error) {
+        loader.style.display = "none";
+        errorMsg.textContent = `Error: ${error.message}`;
+        errorMsg.style.display = "block";
       }
+    });
+
+    function downloadJson(data) {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      const name = data.body.data[0].name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const filename = `astro_chart_${name}_${Date.now()}.json`;
+
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", filename);
+      document.body.appendChild(downloadAnchorNode); // required for firefox
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    }
+
+    /* D3 Chart Drawing Logic */
+    function drawChart(data) {
+      const allPlanets = data.body.data[0].chart.planets;
+      const allAspects = data.body.data[0].chart.aspects;
+
+      // Filter Data
+      const nodeType = document.getElementById("nodeType").value; // "True" or "Mean"
+
+      const chartPlanets = allPlanets.filter(p => {
+        // Remove South Nodes
+        if (p.body.includes("South Node")) return false;
+        // Remove unselected Node type
+        if (p.body.includes("Node") && !p.body.includes(nodeType)) return false;
+        return true;
+      });
+
+      const chartAspects = allAspects.filter(a => {
+        // Remove aspects to Descendant (Descendant is usually opposite Ascendant, but let's check name)
+        // API doesn't return Descendant as a body, but it might be in aspect list?
+        // Actually, sometimes Desc is calculated. Let's filter by body name.
+        const ignored = ["Descendant", "South Node", "True South Node", "Mean South Node"];
+        if (ignored.includes(a.body1) || ignored.includes(a.body2)) return false;
+
+        // Remove aspects to unselected Node
+        const otherNode = nodeType === "True" ? "Mean" : "True";
+        if (a.body1.includes(otherNode + " North Node") || a.body2.includes(otherNode + " North Node")) return false;
+
+        // Filter Minor Bodies (Asteroids/Lilith)
+        const showMinor = document.getElementById("showMinor").checked;
+        if (!showMinor) {
+          const minorBodies = ["Lilith", "Ceres", "Pallas", "Juno", "Vesta"];
+          // Check if body1 or body2 is a minor body
+          if (minorBodies.some(m => a.body1.includes(m) || a.body2.includes(m))) return false;
+        }
+
+        return true;
+      });
+
+      const container = document.getElementById('chart-container');
+      container.innerHTML = ''; // Clear previous
+
+      const width = container.clientWidth;
+      const height = width;
+      const radius = width / 2;
+      const innerRadius = radius * 0.8;
+
+      const svg = d3.select('#chart-container')
+        .append('svg')
+        .attr('viewBox', `-${width / 2} -${height / 2} ${width} ${height}`);
+
+      // Symbol Maps
+      const signs = ["♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓"];
+      const planetSymbols = {
+        "Sun": "☉", "Moon": "☽", "Mercury": "☿", "Venus": "♀", "Mars": "♂",
+        "Jupiter": "♃", "Saturn": "♄", "Uranus": "♅", "Neptune": "♆", "Pluto": "♇",
+        "Ascendant": "Asc", "Midheaven": "MC",
+        "True North Node": "☊", "Mean North Node": "☊",
+        "Chiron": "⚷"
+      };
+
+      // 1. Draw Zodiac Ring (CCW)
+      // Standard Astrology: Signs increase Counter-Clockwise.
+      // Ascendant (Left / 9 o'clock).
+
+      const ascendant = allPlanets.find(p => p.body === "Ascendant");
+
+      const getTotalDegrees = (p) => {
+        const signMap = {
+          "Aries": 0, "Taurus": 1, "Gemini": 2, "Cancer": 3, "Leo": 4, "Virgo": 5,
+          "Libra": 6, "Scorpio": 7, "Sagittarius": 8, "Capricorn": 9, "Aquarius": 10, "Pisces": 11
+        };
+        return (signMap[p.zodiacSign] * 30) + p.position.degrees + (p.position.minutes / 60);
+      };
+
+      const ascTotal = getTotalDegrees(ascendant);
+
+      // Rotation Logic (CCW):
+      // We want Ascendant (deg) to be at 9 o'clock (Left).
+      // Target: 90 deg CCW from Top.
+      // Delta = 90 - ascTotal.
+      // SVG Rotate = -(Delta) = ascTotal - 90.
+
+      const visualRotation = ascTotal - 90;
+
+      const groupRotated = svg.append("g")
+        .attr("transform", `rotate(${visualRotation})`);
+
+      // Draw Main Ring
+      const pie = d3.pie().value(1).sort(null).startAngle(2 * Math.PI).endAngle(0);
+      const arc = d3.arc().innerRadius(innerRadius).outerRadius(radius);
+
+      const zodiacGroup = groupRotated.append("g").attr("class", "zodiac-ring");
+
+      const arcs = zodiacGroup.selectAll("g.arc")
+        .data(pie(signs))
+        .enter()
+        .append("g")
+        .attr("class", "arc");
+
+      arcs.append("path")
+        .attr("d", arc)
+        .attr("stroke", "#ffffff22");
+
+      arcs.append("text")
+        .attr("transform", d => {
+          return `translate(${arc.centroid(d)}) rotate(${-visualRotation})`;
+        })
+        .attr("dy", "0.35em")
+        .attr("class", "zodiac-label")
+        .text(d => d.data);
+
+      // 1b. Draw 360 Degree Grid (Ticks)
+      // We are in groupRotated (0=Top).
+      // Ticks go CCW. 
+      // 360 ticks.
+      const ticksGroup = groupRotated.append("g").attr("class", "ticks");
+
+      for (let i = 0; i < 360; i++) {
+        const isTen = i % 10 === 0;
+        const isFive = i % 5 === 0;
+        const len = isTen ? 10 : (isFive ? 6 : 3);
+        const stroke = isTen ? 1.5 : 0.5;
+        const opacity = isTen ? 0.6 : (isFive ? 0.4 : 0.2);
+
+        // i is angle in degrees CCW from Top.
+        // SVG rotate(-i) is CCW.
+        const tickGroup = ticksGroup.append("g")
+          .attr("transform", `rotate(${-i}) translate(0, ${-innerRadius})`);
+
+        tickGroup.append("line")
+          .attr("y1", 0)
+          .attr("y2", len)
+          .attr("stroke", "var(--text-main)")
+          .attr("stroke-width", stroke)
+          .attr("opacity", opacity);
+      }
+
+      // 2. Plot Planets (Collision Avoidance - OUTSIDE)
+      const symbolRadius = radius + 25; // Outside the ring
+      const guideLineInner = radius; // Start guide line at outer edge of ring
+      const aspectRadius = innerRadius; // Aspects connect to inner edge (ticks)
+
+      // Prepare Data
+      let nodes = chartPlanets
+        .filter(p => planetSymbols[p.body])
+        .map(p => {
+          return {
+            ...p,
+            trueDeg: getTotalDegrees(p), // True zodiacal degree
+            displayDeg: getTotalDegrees(p) // Will be modified by collision
+          };
+        })
+        .sort((a, b) => a.trueDeg - b.trueDeg);
+
+      // Separation Logic (Order-Preserving)
+      // Push symbols forward only to maintain zodiacal order
+      const MIN_DIST = 6; // Minimum degrees between symbols
+      const MAX_ITER = 20;
+
+      for (let iter = 0; iter < MAX_ITER; iter++) {
+        let changed = false;
+        for (let i = 0; i < nodes.length - 1; i++) {
+          const p1 = nodes[i];
+          const p2 = nodes[i + 1];
+
+          let diff = p2.displayDeg - p1.displayDeg;
+
+          // If they're too close, push p2 forward (maintain order)
+          if (diff < MIN_DIST) {
+            p2.displayDeg = p1.displayDeg + MIN_DIST;
+            changed = true;
+          }
+        }
+        if (!changed) break;
+      }
+
+      // Draw Planets
+      nodes.forEach(planet => {
+        const deg = planet.trueDeg;
+        const disp = planet.displayDeg;
+
+        // Coords for Guide Line Start (Outer Ring Edge at True Degree)
+        const startRad = (deg) * Math.PI / 180;
+        const sx = -guideLineInner * Math.sin(startRad);
+        const sy = -guideLineInner * Math.cos(startRad);
+
+        // Coords for Symbol Center (Placed at Display Degree)
+        const endRad = (disp) * Math.PI / 180;
+        const ex = -symbolRadius * Math.sin(endRad);
+        const ey = -symbolRadius * Math.cos(endRad);
+
+        // Draw Guide Line (Outer Ring -> Symbol)
+        if (Math.abs(deg - disp) > 0.5) {
+          groupRotated.append("line")
+            .attr("x1", sx)
+            .attr("y1", sy)
+            .attr("x2", ex)
+            .attr("y2", ey)
+            .attr("stroke", "var(--text-muted)")
+            .attr("stroke-width", 0.5)
+            .attr("opacity", 0.5);
+        } else {
+          // Small tick extension if aligned
+          groupRotated.append("line")
+            .attr("x1", sx)
+            .attr("y1", sy)
+            .attr("x2", -(symbolRadius - 10) * Math.sin(startRad))
+            .attr("y2", -(symbolRadius - 10) * Math.cos(startRad))
+            .attr("stroke", "var(--text-muted)")
+            .attr("stroke-width", 0.5)
+            .attr("opacity", 0.5);
+        }
+
+        // Draw Symbol Group
+        const pGroup = groupRotated.append("g")
+          .attr("transform", `translate(${ex}, ${ey})`)
+          .style("cursor", "pointer")
+          .on("mouseenter", (event) => {
+            // Show Tooltip
+            const tooltip = document.getElementById("chartTooltip");
+            const deg = Math.floor(planet.trueDeg % 30);
+            const min = Math.floor((planet.trueDeg % 1) * 60);
+            const signIndex = Math.floor(planet.trueDeg / 30);
+            const signs = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"];
+            const sign = signs[signIndex];
+            const retroLabel = planet.isRetrograde ? " ℞" : "";
+
+            tooltip.textContent = `${planet.body}: ${deg}° ${sign} ${min}'${retroLabel}`;
+            tooltip.style.left = `${event.clientX + 15}px`;
+            tooltip.style.top = `${event.clientY + 10}px`;
+            tooltip.style.opacity = "1";
+          })
+          .on("mousemove", (event) => {
+            const tooltip = document.getElementById("chartTooltip");
+            tooltip.style.left = `${event.clientX + 15}px`;
+            tooltip.style.top = `${event.clientY + 10}px`;
+          })
+          .on("mouseleave", () => {
+            document.getElementById("chartTooltip").style.opacity = "0";
+          })
+          .on("click", (event) => {
+            // Show Modal Logic
+            const title = document.getElementById("modalTitle");
+            const list = document.getElementById("modalList");
+            const modal = document.getElementById("planetModal");
+
+            title.textContent = `${planet.body} Aspects`;
+            list.innerHTML = "";
+
+            // Filter aspects for this planet
+            const myAspects = chartAspects.filter(a =>
+              a.body1 === planet.body || a.body2 === planet.body
+            );
+
+            if (myAspects.length === 0) {
+              list.innerHTML = "<li style='color: var(--text-muted); font-style: italic;'>No visible aspects</li>";
+            } else {
+              myAspects.forEach(a => {
+                const isP1 = a.body1 === planet.body;
+                const partner = isP1 ? a.body2 : a.body1;
+                const orb = parseFloat(a.orb).toFixed(2);
+
+                // Color Code
+                const isHard = ["Square", "Opposition"].includes(a.aspect);
+                const color = isHard ? "var(--danger)" : "var(--success)";
+
+                const symbol = planetSymbols[partner] || "";
+
+                const li = document.createElement("li");
+                li.innerHTML = `
+                  <span style="color: ${color}; font-weight: bold;">
+                    ${a.aspect} <span style="color: var(--text-main); font-weight: normal;">vs</span> ${symbol} ${partner}
+                  </span>
+                  <span class="retro-badge" style="color: var(--text-muted); border-color: var(--border);">Orb: ${orb}°</span>
+                `;
+                list.appendChild(li);
+              });
+            }
+
+            modal.style.display = "flex";
+          });
+
+        pGroup.append("text")
+          .text(planetSymbols[planet.body] || "?")
+          .attr("class", "planet-symbol")
+          .attr("transform", `rotate(${-visualRotation})`); // Always vertical
+
+      });
+
+      // 3. Draw Aspects (CCW) using True Degrees -> To Inner Radius (Ticks)
+      const getCoords = (deg, r) => {
+        const rad = deg * (Math.PI / 180);
+        return {
+          x: -r * Math.sin(rad),
+          y: -r * Math.cos(rad)
+        };
+      };
+
+      chartAspects.forEach(aspect => {
+        const p1 = chartPlanets.find(p => p.body === aspect.body1);
+        const p2 = chartPlanets.find(p => p.body === aspect.body2);
+
+        if (!p1 || !p2) return;
+
+        // Connect to inner tick mark
+        const c1 = getCoords(getTotalDegrees(p1), aspectRadius);
+        const c2 = getCoords(getTotalDegrees(p2), aspectRadius);
+
+        const color = ["Square", "Opposition"].includes(aspect.aspect) ? "var(--danger)" : "var(--success)";
+
+        groupRotated.append("line")
+          .attr("x1", c1.x)
+          .attr("y1", c1.y)
+          .attr("x2", c2.x)
+          .attr("y2", c2.y)
+          .attr("class", "aspect-line")
+          .attr("stroke", color);
+      });
+
+      // Center Point
+      svg.append("circle").attr("r", 3).attr("fill", "var(--accent)");
+    }
+
+    async function calculateChart() {
+      // Collect form data (unchanged logic, just new IDs if needed)
+      const getVal = (id) => document.getElementById(id).value;
+
+      const apiUrl = new URL("http://localhost:3000/calculate");
+      const params = {
+        name: getVal("name"),
+        type: getVal("type"),
+        gender: getVal("gender"),
+        year: getVal("year"),
+        month: getVal("month"),
+        day: getVal("day"),
+        hour: getVal("hour"),
+        minute: getVal("minute"),
+        second: getVal("second"),
+        timezone: getVal("timezone"),
+        latitude: getVal("latitude"),
+        longitude: getVal("longitude"),
+        houseSystem: getVal("houseSystem"),
+      };
+
+      // If not person, remove gender
+      if (params.type !== "Person") delete params.gender;
+
+      Object.keys(params).forEach(key => apiUrl.searchParams.append(key, params[key]));
+
+      const response = await fetch(apiUrl.toString());
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      return await response.json();
+    }
+
+    function formatPos(p) {
+      // Formats degrees/minutes/seconds
+      return `${p.degrees}° ${p.minutes}' ${p.seconds}"`;
+    }
+
+    function renderData(data) {
+      const chart = data.body.data[0].chart;
+
+      // 1. Render Planets
+      const planetsBody = document.getElementById("planets-body");
+      planetsBody.innerHTML = chart.planets.map(p => `
+          <tr>
+            <td><strong>${p.body}</strong></td>
+            <td>${p.zodiacSign}</td>
+            <td>${formatPos(p.position)}</td>
+            <td>${p.isRetrograde ? '<span class="retro-badge">Rx</span>' : 'D'}</td>
+          </tr>
+        `).join('');
+
+      // 2. Render Houses
+      const housesBody = document.getElementById("houses-body");
+      housesBody.innerHTML = chart.houses.map(h => `
+          <tr>
+            <td>${h.house}</td>
+            <td>—</td> <!-- Sign logic would require adding Sign to House data in backend, treating simple position for now -->
+            <td>${formatPos(h.formattedPosition)}</td>
+          </tr>
+        `).join('');
+
+      // 3. Render Aspects
+      const aspectsBody = document.getElementById("aspects-body");
+
+      // Helper to determine aspect class
+      const getAspectClass = (name) => {
+        const hard = ['Square', 'Opposition', 'Quincunx'];
+        const soft = ['Trine', 'Sextile'];
+        if (hard.includes(name)) return 'aspect-hard';
+        if (soft.includes(name)) return 'aspect-soft';
+        return 'aspect-neutral';
+      };
+
+      aspectsBody.innerHTML = chart.aspects.map(a => `
+          <tr>
+            <td>${a.body1}</td>
+            <td><span class="aspect-tag ${getAspectClass(a.aspect)}">${a.aspect}</span></td>
+            <td>${a.body2}</td>
+            <td>${a.orb}</td>
+          </tr>
+        `).join('');
     }
   </script>
 </body>

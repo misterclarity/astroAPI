@@ -137,7 +137,8 @@ function calculatePlanetPositions(
   second,
   timezone,
   latitude,
-  longitude
+  longitude,
+  houseSystem = "P"
 ) {
   try {
     // Convert local time to UTC
@@ -221,7 +222,7 @@ function calculatePlanetPositions(
     });
 
     // Calculate houses
-    const houseData = calculateHouses(jd_ut, latitude, longitude);
+    const houseData = calculateHouses(jd_ut, latitude, longitude, houseSystem);
 
     // Add Ascendant and Midheaven to positions
     positions.push({
@@ -326,8 +327,8 @@ function calculateAspects(positions) {
  * @param {number} longitude - Geographic longitude
  * @returns {Object} Object containing house positions
  */
-function calculateHouses(jd_ut, latitude, longitude) {
-  const result = houses_ex2(jd_ut, 0, latitude, longitude, "P");
+function calculateHouses(jd_ut, latitude, longitude, houseSystem = "P") {
+  const result = houses_ex2(jd_ut, 0, latitude, longitude, houseSystem);
   if (result.flag !== constants.OK) {
     throw new Error("Error calculating houses: " + result.error);
   }
@@ -376,6 +377,7 @@ const validateCalculateInput = (req, res, next) => {
     name,
     type,
     gender,
+    houseSystem,
   } = req.query;
 
   // Convert query string parameters to appropriate types
@@ -440,6 +442,7 @@ const validateCalculateInput = (req, res, next) => {
     name,
     type,
     gender,
+    houseSystem: houseSystem || "P",
   };
 
   next();
@@ -460,6 +463,7 @@ app.get("/calculate", validateCalculateInput, (req, res) => {
     name,
     type,
     gender,
+    houseSystem,
   } = req.parsedQuery;
 
   try {
@@ -472,7 +476,8 @@ app.get("/calculate", validateCalculateInput, (req, res) => {
       second,
       timezone,
       latitude,
-      longitude
+      longitude,
+      houseSystem
     );
 
     const response = {
