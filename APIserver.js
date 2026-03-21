@@ -2,8 +2,12 @@
 require("dotenv").config();
 
 // Import required modules
+const cluster = require("cluster");
+const os = require("os");
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
+const helmet = require("helmet");
 const path = require("path");
 const {
   utc_to_jd,
@@ -15,262 +19,113 @@ const {
 const rateLimit = require("express-rate-limit");
 const winston = require("winston");
 const { DateTime } = require("luxon");
+const { LRUCache } = require("lru-cache");
 
-// Initialize Express app
-const app = express();
+// --- Cluster mode: fork one worker per CPU core ---
+const numCPUs = os.cpus().length;
 
-// Configure Express to trust the reverse proxy
-app.set("trust proxy", true);
+if (cluster.isPrimary) {
+  console.log(`Primary process ${process.pid} starting ${numCPUs} workers...`);
 
-// Set up logging
-const logger = winston.createLogger({
-  level: "info",
-  format: winston.format.json(),
-  defaultMeta: { service: "astrology-api" },
-  transports: [
-    new winston.transports.File({ filename: "error.log", level: "error" }),
-    new winston.transports.File({ filename: "combined.log" }),
-  ],
-});
-
-if (process.env.NODE_ENV !== "production") {
-  logger.add(
-    new winston.transports.Console({
-      format: winston.format.simple(),
-    })
-  );
-}
-
-const port = process.env.PORT || 3000;
-
-app.use(cors());
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
-  standardHeaders: true,
-  legacyHeaders: false,
-  trustProxy: true,
-  keyGenerator: (req) => {
-    return (
-      req.ip || req.headers["x-forwarded-for"] || req.connection.remoteAddress
-    );
-  },
-});
-app.use(limiter);
-
-app.use((req, res, next) => {
-  logger.info(`Incoming request: ${req.method} ${req.originalUrl}`, {
-    ip: req.ip,
-    forwardedFor: req.headers["x-forwarded-for"],
-    realIp: req.connection.remoteAddress,
-    headers: req.headers,
-    query: req.query,
-  });
-  next();
-});
-
-set_ephe_path(process.env.EPHE_PATH || path.join(__dirname, "ephe"));
-
-app.get("/health", (req, res) => {
-  res.send({ status: "Server is running" });
-});
-
-/**
- * Determines the zodiac sign based on the ecliptic longitude
- * @param {number} eclipticLongitude - The ecliptic longitude in degrees
- * @returns {string} The zodiac sign
- */
-function getZodiacSign(eclipticLongitude) {
-  const zodiacSigns = [
-    "Aries",
-    "Taurus",
-    "Gemini",
-    "Cancer",
-    "Leo",
-    "Virgo",
-    "Libra",
-    "Scorpio",
-    "Sagittarius",
-    "Capricorn",
-    "Aquarius",
-    "Pisces",
-  ];
-  const signIndex = Math.floor(eclipticLongitude / 30) % 12;
-  return zodiacSigns[signIndex];
-}
-
-/**
- * Calculates the precise position within a zodiac sign
- * @param {number} eclipticLongitude - The ecliptic longitude in degrees
- * @returns {Object} Object containing degrees, minutes, and seconds
- */
-function getPrecisePosition(eclipticLongitude) {
-  const totalDegrees = eclipticLongitude % 30;
-  const degrees = Math.floor(totalDegrees);
-  const minutesFloat = (totalDegrees - degrees) * 60;
-  const minutes = Math.floor(minutesFloat);
-  const seconds = Math.round((minutesFloat - minutes) * 60);
-
-  return { degrees, minutes, seconds };
-}
-
-/**
- * Calculates planetary positions for a given date and time
- * @param {number} year
- * @param {number} month
- * @param {number} day
- * @param {number} hour
- * @param {number} minute
- * @param {number} second
- * @param {string} timezone - The timezone of the input date and time
- * @param {number} latitude - The latitude for house calculations
- * @param {number} longitude - The longitude for house calculations
- * @returns {Object} Object containing positions, aspects, and houses
- */
-function calculatePlanetPositions(
-  year,
-  month,
-  day,
-  hour,
-  minute,
-  second,
-  timezone,
-  latitude,
-  longitude,
-  houseSystem = "P"
-) {
-  try {
-    // Convert local time to UTC
-    const localTime = DateTime.fromObject(
-      { year, month, day, hour, minute, second },
-      { zone: timezone }
-    );
-    const utcTime = localTime.toUTC();
-
-    // Convert UTC time to Julian Date
-    // ASTROLOGY CONTEXT:
-    // A "Julian Date" (JD) is a continuous count of days since the beginning of the Julian Period (January 1, 4713 BC).
-    // Astronomers and astrologers use it because it makes calculating the time difference between two events very easy
-    // (just subtraction), avoiding the complexities of leap years and different calendar systems (Gregorian vs Julian).
-    const date = utc_to_jd(
-      utcTime.year,
-      utcTime.month,
-      utcTime.day,
-      utcTime.hour,
-      utcTime.minute,
-      utcTime.second,
-      constants.SE_GREG_CAL
-    );
-    if (date.flag !== constants.OK) {
-      throw new Error(`Error converting to Julian Date: ${date.error}`);
-    }
-    const [jd_et, jd_ut] = date.data;
-
-    // Set calculation flags
-    // SEFLG_SWIEPH: Use Swiss Ephemeris data files (high precision, ~0.001 arcseconds)
-    // SEFLG_SPEED: Calculate speed of the planet (necessary to determine if it's Retrograde)
-    const flags = constants.SEFLG_SWIEPH | constants.SEFLG_SPEED;
-
-    // Define planets and points to calculate
-    const celestialBodies = [
-      { name: "Sun", id: constants.SE_SUN },
-      { name: "Moon", id: constants.SE_MOON },
-      { name: "Mercury", id: constants.SE_MERCURY },
-      { name: "Venus", id: constants.SE_VENUS },
-      { name: "Mars", id: constants.SE_MARS },
-      { name: "Jupiter", id: constants.SE_JUPITER },
-      { name: "Saturn", id: constants.SE_SATURN },
-      { name: "Uranus", id: constants.SE_URANUS },
-      { name: "Neptune", id: constants.SE_NEPTUNE },
-      { name: "Pluto", id: constants.SE_PLUTO },
-      { name: "Chiron", id: constants.SE_CHIRON },
-      { name: "Ceres", id: constants.SE_CERES },
-      { name: "Pallas", id: constants.SE_PALLAS },
-      { name: "Juno", id: constants.SE_JUNO },
-      { name: "Vesta", id: constants.SE_VESTA },
-      { name: "True North Node", id: constants.SE_TRUE_NODE },
-      { name: "True South Node", id: constants.SE_TRUE_NODE },
-      { name: "Mean North Node", id: constants.SE_MEAN_NODE },
-      { name: "Mean South Node", id: constants.SE_MEAN_NODE },
-    ];
-
-    // Calculate positions for celestial bodies
-    const positions = celestialBodies.map((body) => {
-      const position = calc(jd_et, body.id, flags);
-      if (position.flag !== flags) {
-        throw new Error(`Error calculating ${body.name}: ${position.error}`);
-      }
-      let eclipticLongitude = position.data[0];
-
-      // Special handling for South Nodes
-      if (body.name === "True South Node" || body.name === "Mean South Node") {
-        eclipticLongitude = (eclipticLongitude + 180) % 360;
-      }
-
-      const zodiacSign = getZodiacSign(eclipticLongitude);
-      const precisePosition = getPrecisePosition(eclipticLongitude);
-      const isRetrograde = position.data[3] < 0; // Check if speed in longitude is negative
-
-      return {
-        body: body.name,
-        zodiacSign,
-        position: precisePosition,
-        isRetrograde: !body.name.includes("Node") ? isRetrograde : null,
-        _eclipticLongitude: eclipticLongitude, // Keep for internal calculations
-      };
-    });
-
-    // Calculate houses
-    const houseData = calculateHouses(jd_ut, latitude, longitude, houseSystem);
-
-    // Add Ascendant and Midheaven to positions
-    positions.push({
-      body: "Ascendant",
-      zodiacSign: getZodiacSign(houseData.points.asc),
-      position: getPrecisePosition(houseData.points.asc),
-      _eclipticLongitude: houseData.points.asc, // Keep for internal calculations
-    });
-
-    positions.push({
-      body: "Midheaven",
-      zodiacSign: getZodiacSign(houseData.points.mc),
-      position: getPrecisePosition(houseData.points.mc),
-      _eclipticLongitude: houseData.points.mc, // Keep for internal calculations
-    });
-
-    // Calculate aspects
-    const aspects = calculateAspects(positions);
-
-    // Remove _eclipticLongitude before returning
-    const positionsWithoutEclipticLongitude = positions.map(({ _eclipticLongitude, ...rest }) => rest);
-
-    return {
-      positions: positionsWithoutEclipticLongitude,
-      aspects,
-      houses: houseData.houses,
-      points: houseData.points,
-    };
-  } catch (error) {
-    console.error("Error in calculatePlanetPositions:", error);
-    throw error;
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
   }
-}
-/**
- * Calculates aspects between planets.
- * ASTROLOGY CONTEXT:
- * An "Aspect" represents a specific geometric angle between two celestial bodies relative to the Earth.
- * Aspects describe how the energies of two planets interact.
- * - Conjunction (0°): Blending of energies.
- * - Opposition (180°): Tension, awareness, polarity.
- * - Trine (120°): Harmony, easy flow of energy.
- * - Square (90°): Friction, challenge, call to action.
- * - Orb: The "allowance" of deviation from the exact angle. e.g., if a Trine is 120°, and the orb is 8°,
- *   any angle between 112° and 128° is considered a Trine.
- */
-function calculateAspects(positions) {
-  const aspects = [];
-  const aspectDefinitions = [
+
+  cluster.on("exit", (worker, code, signal) => {
+    console.log(`Worker ${worker.process.pid} exited (${signal || code}). Restarting...`);
+    cluster.fork();
+  });
+} else {
+  // --- Worker process: run the Express server ---
+
+  const app = express();
+
+  // Configure Express to trust the reverse proxy
+  app.set("trust proxy", true);
+
+  // Set up logging
+  const isProduction = process.env.NODE_ENV === "production";
+  const logger = winston.createLogger({
+    level: isProduction ? "warn" : "info",
+    format: winston.format.json(),
+    defaultMeta: { service: "astrology-api", pid: process.pid },
+    transports: [
+      new winston.transports.File({ filename: "error.log", level: "error" }),
+      new winston.transports.File({ filename: "combined.log" }),
+    ],
+  });
+
+  if (!isProduction) {
+    logger.add(
+      new winston.transports.Console({
+        format: winston.format.simple(),
+      })
+    );
+  }
+
+  const port = process.env.PORT || 3000;
+
+  // --- Middleware stack ---
+  app.use(helmet());
+  app.use(compression());
+  app.use(cors());
+
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      return req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    },
+  });
+  app.use(limiter);
+
+  // Lightweight request logging (no full headers)
+  app.use((req, res, next) => {
+    logger.info(`${req.method} ${req.originalUrl}`, { ip: req.ip });
+    next();
+  });
+
+  // --- Swiss Ephemeris setup ---
+  set_ephe_path(process.env.EPHE_PATH || path.join(__dirname, "ephe"));
+
+  // --- LRU Cache for calculation results ---
+  const calculationCache = new LRUCache({
+    max: 500,
+    ttl: 60 * 60 * 1000, // 1 hour
+  });
+
+  // --- Static lookup tables (hoisted out of functions for performance) ---
+  const ZODIAC_SIGNS = [
+    "Aries", "Taurus", "Gemini", "Cancer",
+    "Leo", "Virgo", "Libra", "Scorpio",
+    "Sagittarius", "Capricorn", "Aquarius", "Pisces",
+  ];
+
+  const CELESTIAL_BODIES = [
+    { name: "Sun", id: constants.SE_SUN },
+    { name: "Moon", id: constants.SE_MOON },
+    { name: "Mercury", id: constants.SE_MERCURY },
+    { name: "Venus", id: constants.SE_VENUS },
+    { name: "Mars", id: constants.SE_MARS },
+    { name: "Jupiter", id: constants.SE_JUPITER },
+    { name: "Saturn", id: constants.SE_SATURN },
+    { name: "Uranus", id: constants.SE_URANUS },
+    { name: "Neptune", id: constants.SE_NEPTUNE },
+    { name: "Pluto", id: constants.SE_PLUTO },
+    { name: "Chiron", id: constants.SE_CHIRON },
+    { name: "Ceres", id: constants.SE_CERES },
+    { name: "Pallas", id: constants.SE_PALLAS },
+    { name: "Juno", id: constants.SE_JUNO },
+    { name: "Vesta", id: constants.SE_VESTA },
+    { name: "True North Node", id: constants.SE_TRUE_NODE },
+    { name: "True South Node", id: constants.SE_TRUE_NODE },
+    { name: "Mean North Node", id: constants.SE_MEAN_NODE },
+    { name: "Mean South Node", id: constants.SE_MEAN_NODE },
+  ];
+
+  const ASPECT_DEFINITIONS = [
     { name: "Conjunction", angle: 0, orb: 8 },
     { name: "Opposition", angle: 180, orb: 8 },
     { name: "Trine", angle: 120, orb: 8 },
@@ -280,251 +135,356 @@ function calculateAspects(positions) {
     { name: "Semi-Sextile", angle: 30, orb: 3 },
   ];
 
-  for (let i = 0; i < positions.length; i++) {
-    for (let j = i + 1; j < positions.length; j++) {
-      const body1 = positions[i];
-      const body2 = positions[j];
-      const angleDiff =
-        (body2._eclipticLongitude - body1._eclipticLongitude + 360) % 360;
-      const smallerAngle = Math.min(angleDiff, 360 - angleDiff);
+  const ORDINAL_NAMES = [
+    "1st", "2nd", "3rd", "4th", "5th", "6th",
+    "7th", "8th", "9th", "10th", "11th", "12th",
+  ];
 
-      for (const aspectDef of aspectDefinitions) {
-        const orb = Math.abs(smallerAngle - aspectDef.angle);
-        if (orb <= aspectDef.orb) {
-          const orbDegrees = Math.floor(orb);
-          const orbMinutes = Math.round((orb - orbDegrees) * 60);
+  const CALC_FLAGS = constants.SEFLG_SWIEPH | constants.SEFLG_SPEED;
 
-          const orbFormatted = `${orbDegrees}°${orbMinutes
-            .toString()
-            .padStart(2, "0")}'`;
+  // --- Routes ---
 
-          const aspect = {
-            body1: body1.body,
-            body2: body2.body,
-            aspect: aspectDef.name,
-            orb: orbFormatted,
-          };
+  app.get("/health", (req, res) => {
+    res.send({ status: "Server is running", pid: process.pid });
+  });
 
-          aspects.push(aspect);
-          break;
-        }
+  /**
+   * Determines the zodiac sign based on the ecliptic longitude
+   * @param {number} eclipticLongitude - The ecliptic longitude in degrees
+   * @returns {string} The zodiac sign
+   */
+  function getZodiacSign(eclipticLongitude) {
+    const signIndex = Math.floor(eclipticLongitude / 30) % 12;
+    return ZODIAC_SIGNS[signIndex];
+  }
+
+  /**
+   * Calculates the precise position within a zodiac sign
+   * @param {number} eclipticLongitude - The ecliptic longitude in degrees
+   * @returns {Object} Object containing degrees, minutes, and seconds
+   */
+  function getPrecisePosition(eclipticLongitude) {
+    const totalDegrees = eclipticLongitude % 30;
+    let degrees = Math.floor(totalDegrees);
+    const minutesFloat = (totalDegrees - degrees) * 60;
+    let minutes = Math.floor(minutesFloat);
+    let seconds = Math.round((minutesFloat - minutes) * 60);
+
+    // Handle carry-over: 60" → +1', 60' → +1°
+    if (seconds === 60) {
+      seconds = 0;
+      minutes += 1;
+    }
+    if (minutes === 60) {
+      minutes = 0;
+      degrees += 1;
+    }
+
+    return { degrees, minutes, seconds };
+  }
+
+  /**
+   * Calculates planetary positions for a given date and time
+   * @param {number} year
+   * @param {number} month
+   * @param {number} day
+   * @param {number} hour
+   * @param {number} minute
+   * @param {number} second
+   * @param {string} timezone - The timezone of the input date and time
+   * @param {number} latitude - The latitude for house calculations
+   * @param {number} longitude - The longitude for house calculations
+   * @returns {Object} Object containing positions, aspects, and houses
+   */
+  function calculatePlanetPositions(
+    year, month, day, hour, minute, second,
+    timezone, latitude, longitude, houseSystem = "P"
+  ) {
+    try {
+      // Split fractional seconds: Luxon requires integer seconds,
+      // but Swiss Ephemeris utc_to_jd() needs the full float precision.
+      const secInt = Math.floor(second);
+      const secFrac = second - secInt;
+
+      // Convert local time to UTC (using integer seconds for Luxon)
+      const localTime = DateTime.fromObject(
+        { year, month, day, hour, minute, second: secInt },
+        { zone: timezone }
+      );
+      const utcTime = localTime.toUTC();
+
+      // Recombine: integer second from Luxon + milliseconds + original fractional remainder
+      const utcSecond = utcTime.second + (utcTime.millisecond / 1000) + secFrac;
+
+      // Select calendar: Gregorian from Oct 15, 1582 onward; Julian before that
+      const isGregorian = utcTime.year > 1582 ||
+        (utcTime.year === 1582 && (utcTime.month > 10 || (utcTime.month === 10 && utcTime.day >= 15)));
+      const calFlag = isGregorian ? constants.SE_GREG_CAL : constants.SE_JUL_CAL;
+
+      // Convert UTC time to Julian Date
+      const date = utc_to_jd(
+        utcTime.year, utcTime.month, utcTime.day,
+        utcTime.hour, utcTime.minute, utcSecond,
+        calFlag
+      );
+      if (date.flag !== constants.OK) {
+        throw new Error(`Error converting to Julian Date: ${date.error}`);
       }
+      const [jd_et, jd_ut] = date.data;
+
+      // Calculate positions for celestial bodies
+      const positions = CELESTIAL_BODIES.map((body) => {
+        const position = calc(jd_et, body.id, CALC_FLAGS);
+        if ((position.flag & CALC_FLAGS) !== CALC_FLAGS) {
+          throw new Error(`Error calculating ${body.name}: ${position.error}`);
+        }
+        let eclipticLongitude = position.data[0];
+
+        // Special handling for South Nodes
+        if (body.name === "True South Node" || body.name === "Mean South Node") {
+          eclipticLongitude = (eclipticLongitude + 180) % 360;
+        }
+
+        return {
+          body: body.name,
+          zodiacSign: getZodiacSign(eclipticLongitude),
+          position: getPrecisePosition(eclipticLongitude),
+          isRetrograde: !body.name.includes("Node") ? position.data[3] < 0 : null,
+          _eclipticLongitude: eclipticLongitude,
+        };
+      });
+
+      // Calculate houses
+      const houseData = calculateHouses(jd_ut, latitude, longitude, houseSystem);
+
+      // Add Ascendant and Midheaven to positions
+      positions.push({
+        body: "Ascendant",
+        zodiacSign: getZodiacSign(houseData.points.asc),
+        position: getPrecisePosition(houseData.points.asc),
+        _eclipticLongitude: houseData.points.asc,
+      });
+
+      positions.push({
+        body: "Midheaven",
+        zodiacSign: getZodiacSign(houseData.points.mc),
+        position: getPrecisePosition(houseData.points.mc),
+        _eclipticLongitude: houseData.points.mc,
+      });
+
+      // Calculate aspects
+      const aspects = calculateAspects(positions);
+
+      // Remove _eclipticLongitude before returning
+      const positionsWithoutEclipticLongitude = positions.map(
+        ({ _eclipticLongitude, ...rest }) => rest
+      );
+
+      return {
+        positions: positionsWithoutEclipticLongitude,
+        aspects,
+        houses: houseData.houses,
+        points: houseData.points,
+      };
+    } catch (error) {
+      logger.error("Error in calculatePlanetPositions:", error);
+      throw error;
     }
   }
 
-  return aspects;
-}
+  /**
+   * Calculates aspects between planets.
+   */
+  function calculateAspects(positions) {
+    const aspects = [];
 
-/**
- * Calculates Placidus house positions
- * ASTROLOGY CONTEXT:
- * Houses represent different areas of life (e.g., Self, Assets, Communication, Home).
- * The "Placidus" system is one of the most popular space-based house systems.
- * It divides the path of the sun (ecliptic) based on the time it takes for each degree to rise.
- *
- * @param {number} jd_ut - Julian day in universal time
- * @param {number} latitude - Geographic latitude
- * @param {number} longitude - Geographic longitude
- * @returns {Object} Object containing house positions
- */
-function calculateHouses(jd_ut, latitude, longitude, houseSystem = "P") {
-  const result = houses_ex2(jd_ut, 0, latitude, longitude, houseSystem);
-  if (result.flag !== constants.OK) {
-    throw new Error("Error calculating houses: " + result.error);
-  }
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const body1 = positions[i];
+        const body2 = positions[j];
+        const angleDiff =
+          (body2._eclipticLongitude - body1._eclipticLongitude + 360) % 360;
+        const smallerAngle = Math.min(angleDiff, 360 - angleDiff);
 
-  const ordinalNames = [
-    "1st", "2nd", "3rd", "4th", "5th", "6th",
-    "7th", "8th", "9th", "10th", "11th", "12th"
-  ];
+        for (const aspectDef of ASPECT_DEFINITIONS) {
+          const orb = Math.abs(smallerAngle - aspectDef.angle);
+          if (orb <= aspectDef.orb) {
+            const orbDegrees = Math.floor(orb);
+            const orbMinutes = Math.round((orb - orbDegrees) * 60);
 
-  const housePositions = result.data.houses.map((position, index) => ({
-    house: ordinalNames[index],
-    formattedPosition: getPrecisePosition(position),
-  }));
-
-  const points = {
-    asc: result.data.points[0],
-    mc: result.data.points[1],
-    armc: result.data.points[2],
-    vertex: result.data.points[3],
-    equasc: result.data.points[4],
-    coasc1: result.data.points[5],
-    coasc2: result.data.points[6],
-    polasc: result.data.points[7],
-  };
-
-  return {
-    houses: housePositions,
-    points: points,
-  };
-}
-
-/**
- * Middleware for input validation
- */
-const validateCalculateInput = (req, res, next) => {
-  const {
-    year = 2000,
-    month = 1,
-    day = 1,
-    hour = 0,
-    minute = 0,
-    second = 0,
-    timezone,
-    latitude,
-    longitude,
-    name,
-    type,
-    gender,
-    houseSystem,
-  } = req.query;
-
-  // Convert query string parameters to appropriate types
-  const parsedYear = parseInt(year);
-  const parsedMonth = parseInt(month);
-  const parsedDay = parseInt(day);
-  const parsedHour = parseInt(hour);
-  const parsedMinute = parseInt(minute);
-  const parsedSecond = parseFloat(second);
-  const parsedLatitude = parseFloat(latitude);
-  const parsedLongitude = parseFloat(longitude);
-
-  if (![parsedYear, parsedMonth, parsedDay, parsedHour, parsedMinute].every(Number.isInteger)) {
-    return res
-      .status(400)
-      .json({ error: "All time parameters except 'second' must be integers" });
-  }
-  if (
-    parsedMonth < 1 ||
-    parsedMonth > 12 ||
-    parsedDay < 1 ||
-    parsedDay > 31 ||
-    parsedHour < 0 ||
-    parsedHour > 23 ||
-    parsedMinute < 0 ||
-    parsedMinute > 59 ||
-    parsedSecond < 0 ||
-    parsedSecond >= 60
-  ) {
-    return res.status(400).json({ error: "Invalid date or time values" });
-  }
-  if (!timezone || !DateTime.local().setZone(timezone).isValid) {
-    return res.status(400).json({ error: "Invalid or missing timezone" });
-  }
-  if (isNaN(parsedLatitude) || parsedLatitude < -90 || parsedLatitude > 90) {
-    return res.status(400).json({ error: "Invalid latitude" });
-  }
-  if (isNaN(parsedLongitude) || parsedLongitude < -180 || parsedLongitude > 180) {
-    return res.status(400).json({ error: "Invalid longitude" });
-  }
-  if (!name || name.trim() === "") {
-    return res.status(400).json({ error: "Name is required" });
-  }
-  if (!type || (type !== "Person" && type !== "Event")) {
-    return res.status(400).json({ error: "Type must be either 'Person' or 'Event'" });
-  }
-  if (type === "Person" && (!gender || (gender !== "Male" && gender !== "Female"))) {
-    return res.status(400).json({ error: "Gender must be either 'Male' or 'Female' for Person type" });
-  }
-
-  // Attach parsed values to the request object
-  req.parsedQuery = {
-    year: parsedYear,
-    month: parsedMonth,
-    day: parsedDay,
-    hour: parsedHour,
-    minute: parsedMinute,
-    second: parsedSecond,
-    timezone,
-    latitude: parsedLatitude,
-    longitude: parsedLongitude,
-    name,
-    type,
-    gender,
-    houseSystem: houseSystem || "P",
-  };
-
-  next();
-};
-
-// Updated API endpoint for calculating planetary positions
-app.get("/calculate", validateCalculateInput, (req, res) => {
-  const {
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    second,
-    timezone,
-    latitude,
-    longitude,
-    name,
-    type,
-    gender,
-    houseSystem,
-  } = req.parsedQuery;
-
-  try {
-    const result = calculatePlanetPositions(
-      year,
-      month,
-      day,
-      hour,
-      minute,
-      second,
-      timezone,
-      latitude,
-      longitude,
-      houseSystem
-    );
-
-    const response = {
-      header: {
-        generated: new Date().toISOString(),
-        version: "1.0"
-      },
-      body: {
-        data: [{
-          name: name,
-          type: type,
-          gender: gender || "",
-          chart: {
-            planets: result.positions,
-            aspects: result.aspects,
-            houses: result.houses,
+            aspects.push({
+              body1: body1.body,
+              body2: body2.body,
+              aspect: aspectDef.name,
+              orb: `${orbDegrees}\u00B0${orbMinutes.toString().padStart(2, "0")}'`,
+            });
+            break;
           }
-        }]
+        }
       }
+    }
+
+    return aspects;
+  }
+
+  /**
+   * Calculates house positions
+   * @param {number} jd_ut - Julian day in universal time
+   * @param {number} latitude - Geographic latitude
+   * @param {number} longitude - Geographic longitude
+   * @returns {Object} Object containing house positions
+   */
+  function calculateHouses(jd_ut, latitude, longitude, houseSystem = "P") {
+    const result = houses_ex2(jd_ut, 0, latitude, longitude, houseSystem);
+    if (result.flag !== constants.OK) {
+      throw new Error("Error calculating houses: " + result.error);
+    }
+
+    const housePositions = result.data.houses.map((position, index) => ({
+      house: ORDINAL_NAMES[index],
+      formattedPosition: getPrecisePosition(position),
+    }));
+
+    const points = {
+      asc: result.data.points[0],
+      mc: result.data.points[1],
+      armc: result.data.points[2],
+      vertex: result.data.points[3],
+      equasc: result.data.points[4],
+      coasc1: result.data.points[5],
+      coasc2: result.data.points[6],
+      polasc: result.data.points[7],
     };
 
-    res.json(response);
-  } catch (error) {
-    logger.error("Error in /calculate:", error);
-    res
-      .status(500)
-      .json({ error: "Internal server error", details: error.message });
+    return { houses: housePositions, points };
   }
-});
 
-app.use((req, res) => {
-  logger.warn(`404 - Not Found: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ error: "Not Found" });
-});
+  /**
+   * Middleware for input validation
+   */
+  const validateCalculateInput = (req, res, next) => {
+    const {
+      year = 2000, month = 1, day = 1,
+      hour = 0, minute = 0, second = 0,
+      timezone, latitude, longitude,
+      name, type, gender, houseSystem,
+    } = req.query;
 
-app.listen(port, () => {
-  logger.info(`Astrology API listening at http://localhost:${port}`);
-  logger.info(`Trust Proxy setting: ${app.get("trust proxy")}`);
-});
+    const parsedYear = parseInt(year);
+    const parsedMonth = parseInt(month);
+    const parsedDay = parseInt(day);
+    const parsedHour = parseInt(hour);
+    const parsedMinute = parseInt(minute);
+    const parsedSecond = parseFloat(second);
+    const parsedLatitude = parseFloat(latitude);
+    const parsedLongitude = parseFloat(longitude);
 
-process.on("uncaughtException", (error) => {
-  logger.error("Uncaught Exception:", error);
-  process.exit(1);
-});
+    if (![parsedYear, parsedMonth, parsedDay, parsedHour, parsedMinute].every(Number.isInteger)) {
+      return res.status(400).json({ error: "All time parameters except 'second' must be integers" });
+    }
+    if (
+      parsedMonth < 1 || parsedMonth > 12 ||
+      parsedDay < 1 || parsedDay > 31 ||
+      parsedHour < 0 || parsedHour > 23 ||
+      parsedMinute < 0 || parsedMinute > 59 ||
+      parsedSecond < 0 || parsedSecond >= 60
+    ) {
+      return res.status(400).json({ error: "Invalid date or time values" });
+    }
+    if (!timezone || !DateTime.local().setZone(timezone).isValid) {
+      return res.status(400).json({ error: "Invalid or missing timezone" });
+    }
+    if (isNaN(parsedLatitude) || parsedLatitude < -90 || parsedLatitude > 90) {
+      return res.status(400).json({ error: "Invalid latitude" });
+    }
+    if (isNaN(parsedLongitude) || parsedLongitude < -180 || parsedLongitude > 180) {
+      return res.status(400).json({ error: "Invalid longitude" });
+    }
+    if (!name || name.trim() === "") {
+      return res.status(400).json({ error: "Name is required" });
+    }
+    if (!type || (type !== "Person" && type !== "Event")) {
+      return res.status(400).json({ error: "Type must be either 'Person' or 'Event'" });
+    }
+    if (type === "Person" && (!gender || (gender !== "Male" && gender !== "Female"))) {
+      return res.status(400).json({ error: "Gender must be either 'Male' or 'Female' for Person type" });
+    }
 
-process.on("unhandledRejection", (reason, promise) => {
-  logger.error("Unhandled Rejection at:", promise, "reason:", reason);
-});
+    req.parsedQuery = {
+      year: parsedYear, month: parsedMonth, day: parsedDay,
+      hour: parsedHour, minute: parsedMinute, second: parsedSecond,
+      timezone, latitude: parsedLatitude, longitude: parsedLongitude,
+      name, type, gender,
+      houseSystem: houseSystem || "P",
+    };
 
-module.exports = app;
+    next();
+  };
+
+  // API endpoint for calculating planetary positions
+  app.get("/calculate", validateCalculateInput, (req, res) => {
+    const {
+      year, month, day, hour, minute, second,
+      timezone, latitude, longitude,
+      name, type, gender, houseSystem,
+    } = req.parsedQuery;
+
+    try {
+      // Build cache key from calculation-relevant params only (not name/type/gender)
+      const cacheKey = `${year}:${month}:${day}:${hour}:${minute}:${second}:${timezone}:${latitude}:${longitude}:${houseSystem}`;
+
+      let result = calculationCache.get(cacheKey);
+      if (!result) {
+        result = calculatePlanetPositions(
+          year, month, day, hour, minute, second,
+          timezone, latitude, longitude, houseSystem
+        );
+        calculationCache.set(cacheKey, result);
+      }
+
+      const response = {
+        header: {
+          generated: new Date().toISOString(),
+          version: "1.0",
+        },
+        body: {
+          data: [{
+            name,
+            type,
+            gender: gender || "",
+            chart: {
+              planets: result.positions,
+              aspects: result.aspects,
+              houses: result.houses,
+            },
+          }],
+        },
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error("Error in /calculate:", error);
+      res.status(500).json({ error: "Internal server error", details: error.message });
+    }
+  });
+
+  app.use((req, res) => {
+    logger.warn(`404 - Not Found: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ error: "Not Found" });
+  });
+
+  app.listen(port, () => {
+    logger.info(`Worker ${process.pid} listening on port ${port}`);
+  });
+
+  process.on("uncaughtException", (error) => {
+    logger.error("Uncaught Exception:", error);
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason, promise) => {
+    logger.error("Unhandled Rejection at:", promise, "reason:", reason);
+  });
+
+  module.exports = app;
+}
